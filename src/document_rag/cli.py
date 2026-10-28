@@ -34,6 +34,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--agentic", action="store_true", help="Grade retrieval and retry once if needed."
     )
     ask.add_argument("--top-k", type=int, help="Number of chunks to retrieve.")
+
+    search = subparsers.add_parser("search", help="Show retrieved passages without a Groq key.")
+    search.add_argument("question", nargs="+", help="Search terms or a question.")
+    search.add_argument("--top-k", type=int, help="Number of chunks to show.")
     return parser
 
 
@@ -66,7 +70,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(pdf.relative_to(document_dir).as_posix())
         return 0
 
-    if not os.getenv("GROQ_API_KEY"):
+    if args.command == "ask" and not os.getenv("GROQ_API_KEY"):
         raise SystemExit("GROQ_API_KEY is missing. Copy .env.example to .env and add your key.")
 
     top_k = args.top_k or settings.top_k
@@ -79,9 +83,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit("The index is empty. Run `document-rag ingest` first.")
 
     retriever = store.as_retriever(search_kwargs={"k": top_k})
+    question = " ".join(args.question)
+    if args.command == "search":
+        documents = retriever.invoke(question)
+        if not documents:
+            print("No passages found. Try a different question or add more PDFs.")
+        for number, document in enumerate(documents, start=1):
+            page = document.metadata.get("page")
+            source = document.metadata.get("source", "Unknown source")
+            label = f"{source}, p. {int(page) + 1}" if page is not None else str(source)
+            print(f"\n[{number}] {label}\n{document.page_content.strip()}")
+        return 0
+
     llm = create_llm(settings.groq_model)
     pipeline = AgenticRAGPipeline(retriever, llm) if args.agentic else RAGPipeline(retriever, llm)
-    question = " ".join(args.question)
     try:
         result = pipeline.ask(question)
     except APIError as error:
