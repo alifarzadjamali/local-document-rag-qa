@@ -45,7 +45,9 @@ def split_documents(
 ) -> list[Document]:
     """Split pages while preserving their source and page metadata."""
     if chunk_size < 1 or not 0 <= chunk_overlap < chunk_size:
-        raise ValueError("chunk_size must be positive and chunk_overlap must be between 0 and chunk_size")
+        raise ValueError(
+            "chunk_size must be positive and chunk_overlap must be between 0 and chunk_size"
+        )
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
