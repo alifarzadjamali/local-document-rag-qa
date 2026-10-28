@@ -28,3 +28,9 @@ def test_index_rebuilds_collection_with_stable_ids() -> None:
 
     assert first_store.was_reset
     assert first_store.ids == second_store.ids
+
+
+def test_empty_rebuild_clears_old_index() -> None:
+    store = FakeStore()
+    assert index_documents(store, []) == 0
+    assert store.was_reset

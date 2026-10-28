@@ -47,9 +47,9 @@ def _chunk_id(document: Document) -> str:
 
 def index_documents(store: Chroma, documents: list[Document]) -> int:
     """Rebuild the collection from the current chunks and return the count indexed."""
-    if not documents:
-        return 0
     # A full rebuild keeps the local index in sync when a PDF is edited or removed.
     store.reset_collection()
+    if not documents:
+        return 0
     store.add_documents(documents=documents, ids=[_chunk_id(doc) for doc in documents])
     return len(documents)
