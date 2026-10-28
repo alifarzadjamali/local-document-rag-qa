@@ -1,193 +1,93 @@
-# Document RAG Pipeline
+# Ask questions about your PDFs
 
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![LangChain](https://img.shields.io/badge/LangChain-RAG-1C3C3C)](https://python.langchain.com/)
-[![Chroma](https://img.shields.io/badge/vector_store-Chroma-FFDE2E)](https://www.trychroma.com/)
-[![Groq](https://img.shields.io/badge/inference-Groq-F55036)](https://groq.com/)
+Put a few PDFs in a folder, build a local search index, and ask questions with page references. This
+repo is a small RAG practice project. It comes with `data/pdf/Attention.pdf` and `Embedding.pdf`, so
+you can try it straight away. You can also use your own University of Salford handouts or other PDFs
+you have permission to use.
 
-A small project for learning retrieval-augmented generation (RAG). It turns a folder of PDFs into a
-searchable local knowledge base, retrieves passages related to a question, and asks a Groq-hosted
-language model to answer with page-level citations.
+The [mini lecture](MINI_LECTURE.md) explains the idea. The [workshop](WORKSHOP.md) gives you a short
+exercise to run and check yourself.
 
-The project stays small so each stage is easy to inspect. The command line mirrors the two phases of
-a RAG system, and the agentic example adds one decision without hiding the fundamentals inside a
-large framework.
+## Start here
 
-**Read [MINI_LECTURE.md](MINI_LECTURE.md) first for a better understanding of RAG and the tools in
-this repository. Then use this README as the practical workshop.**
-
-## How the pipeline works
-
-```mermaid
-flowchart LR
-    A[PDF files] --> B[Load pages]
-    B --> C[Split into overlapping chunks]
-    C --> D[Local Hugging Face embeddings]
-    D --> E[(ChromaDB)]
-    Q[Question] --> F[Semantic retrieval]
-    E --> F
-    F --> G[Grounded prompt]
-    Q --> G
-    G --> H[Groq LLM]
-    H --> I[Answer + sources]
-```
-
-There are two separate runtime phases:
-
-1. **Ingestion** reads every PDF page, preserves source metadata, splits text into chunks, creates
-   embeddings locally with `all-MiniLM-L6-v2`, and stores them in persistent ChromaDB. Each run
-   rebuilds the collection from the current files, so edited or removed PDFs cannot leave stale data.
-2. **Question answering** embeds the question, retrieves the nearest chunks, and sends only those
-   excerpts to Groq. The prompt requires grounded answers and numbered citations and treats PDF text
-   as untrusted content rather than instructions.
-
-The optional agentic path adds a bounded feedback loop:
-
-```mermaid
-flowchart LR
-    Q[Question] --> R[Retrieve]
-    R --> J{Context relevant?}
-    J -- yes --> A[Answer]
-    J -- no --> W[Rewrite search query]
-    W --> R2[Retrieve once more]
-    R2 --> A
-```
-
-This teaches query rewriting and model-directed control flow while staying predictable. The pipeline
-can retry only once, so it cannot enter an expensive or infinite loop.
-
-## Project structure
+You'll need Python 3.11 to 3.13 and [uv](https://docs.astral.sh/uv/). From a terminal:
 
 ```text
-.
-├── MINI_LECTURE.md          # Concepts to read before the workshop
-├── data/
-│   └── pdf/                  # Example PDFs; add your own here
-├── src/document_rag/
-│   ├── document_loader.py   # PDF discovery, loading, and chunking
-│   ├── vector_store.py      # Embeddings, Chroma, and stable chunk IDs
-│   ├── rag.py               # Baseline retrieve-then-generate pipeline
-│   ├── agentic_rag.py       # Relevance check and one query-rewrite retry
-│   ├── config.py            # Environment-backed settings
-│   └── cli.py               # `ingest` and `ask` commands
-└── tests/                   # Fast tests with fake models; no API key needed
-```
-
-## Quick start
-
-The project uses [uv](https://docs.astral.sh/uv/) to lock all transitive dependencies. Python 3.11,
-3.12, or 3.13 is supported.
-
-```bash
 git clone https://github.com/alifarzadjamali/local-document-rag-qa.git
 cd local-document-rag-qa
-
-uv sync
-cp .env.example .env
-```
-
-On Windows PowerShell, use `Copy-Item .env.example .env` instead of `cp`. Open `.env` in a text editor
-and replace `gsk_replace_me` with your own Groq key. You can index PDFs before getting a key; only
-`ask` needs one.
-
-Add your Groq API key to `.env`, then build the local index and ask a question:
-
-```bash
+uv sync --frozen
+uv run document-rag files
 uv run document-rag ingest
-uv run document-rag ask "What is the attention mechanism?"
+uv run document-rag search "What is attention in a transformer?"
 ```
 
-Try the query-rewriting pipeline with:
+`files` lists the PDFs the app can see. `ingest` reads them, splits their text into chunks, and saves
+a search index in `data/vector_store/`. `search` shows the retrieved passages with filenames and page
+numbers. These steps run without a Groq key. The first ingest downloads a local embedding model.
 
-```bash
-uv run document-rag ask --agentic "How does the model know what words matter?"
+To get a written answer, copy `.env.example` to `.env` and add your own [Groq key](https://console.groq.com/keys):
+
+```text
+uv run document-rag ask "What is attention in a transformer?"
 ```
 
-To index another directory without moving its PDFs:
+In PowerShell, copy the file with `Copy-Item .env.example .env`. On macOS or Linux, use
+`cp .env.example .env`. The answer should cite numbered excerpts such as `[1]`; check the listed PDF
+pages before relying on it.
 
-```bash
-uv run document-rag ingest --documents /path/to/pdfs
+## Use a different set of PDFs
+
+Put files in `data/pdf/`, including subfolders if useful, then run `ingest` again. Or keep course
+notes in another folder:
+
+```text
+uv run document-rag files --documents path/to/my/pdfs
+uv run document-rag ingest --documents path/to/my/pdfs
+uv run document-rag search "What does the handout say about assessment?"
+uv run document-rag ask "What does the handout say about assessment?"
 ```
 
-The first ingestion downloads the embedding model. Later runs use the local model cache and the
-persisted database in `data/vector_store/`. The database is generated output, so Git ignores it.
+Each ingest replaces the old index with the contents of the chosen folder. If you switch folders,
+run it again before asking questions. PDFs need selectable text; scanned images need OCR first.
+Keep private course materials out of Git. Retrieved passages are sent to Groq when you use `ask`.
 
-### Without uv
+## What happens inside
 
-`uv` is the reproducible path, but a standard editable install also works:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-python -m pip install -e .
-cp .env.example .env
-document-rag ingest
+```mermaid
+flowchart LR
+    A[PDF pages] --> B[Text chunks]
+    B --> C[Local embeddings]
+    C --> D[(Chroma index)]
+    Q[Question] --> E[Search]
+    D --> E
+    E --> F[Relevant passages]
+    Q --> G[Groq model]
+    F --> G
+    G --> H[Answer and page references]
 ```
 
-## Reading the code
+Read the code in this order: `document_loader.py` loads pages and chunks them;
+`vector_store.py` builds the index; `rag.py` assembles the prompt and answer; `cli.py` connects the
+commands. `agentic_rag.py` is an optional one-retry experiment. Try
+`uv run document-rag ask --agentic "How does it know which words matter?"` after the basic path works.
+It makes more model calls, so start with the plain `ask` command.
 
-Read the code in this order: `document_loader.py` → `vector_store.py` → `rag.py` →
-`agentic_rag.py` → `cli.py`.
+## Settings and checks
 
-- Document code knows nothing about databases or language models.
-- The vector-store module owns embeddings, persistence, and document IDs.
-- RAG classes depend on LangChain's retriever and chat-model interfaces. They can be tested with
-  fakes or connected to another provider.
-- The CLI wires those pieces together and contains no retrieval logic.
+`.env.example` shows the available settings. `CHUNK_SIZE` and `CHUNK_OVERLAP` control how pages are
+split; `TOP_K` controls how many passages are retrieved. The default embedding model runs locally on
+the CPU. If you change `EMBEDDING_MODEL`, remove the old `data/vector_store/` directory and ingest
+again. `.env` and the index are ignored by Git.
 
-Use the baseline by default. Agentic retrieval adds model calls and latency. Add it when evaluation
-shows that unclear questions often lead to weak retrieval.
-
-## Configuration
-
-Defaults are suitable for the included PDFs. Override them in `.env` when experimenting:
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `GROQ_API_KEY` | required for questions | Groq authentication |
-| `GROQ_MODEL` | `openai/gpt-oss-20b` | Generation and agent decisions |
-| `EMBEDDING_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Local embedding model |
-| `DOCUMENTS_DIR` | `data/pdf` | Default source directory |
-| `VECTOR_STORE_DIR` | `data/vector_store` | Chroma persistence directory |
-| `CHROMA_COLLECTION` | `documents` | Collection name |
-| `CHUNK_SIZE` | `1000` | Maximum chunk length in characters |
-| `CHUNK_OVERLAP` | `200` | Context repeated between chunks |
-| `TOP_K` | `4` | Chunks retrieved per question |
-
-Changing the embedding model creates incompatible vectors. Delete `data/vector_store/` and ingest
-again after making that change.
-
-## Design notes and trade-offs
-
-- **Local embeddings, hosted generation:** document vectors never need a paid embedding API, while
-  Groq provides fast answer generation. PDF excerpts are still sent to Groq when asking a question.
-- **Character-based chunking:** it is easy to inspect and teaches the core idea. Production systems
-  may benefit from token-aware, layout-aware, or semantic chunking.
-- **Dense retrieval only:** Chroma cosine search is a strong baseline. Hybrid search and reranking
-  should be added only after measuring retrieval failures.
-- **Source citations:** retrieved metadata is displayed and the model is prompted to cite excerpt
-  numbers. This improves traceability, but citations should still be verified for high-stakes use.
-- **No web UI:** the CLI keeps the data flow visible and the dependency surface small. The package
-  can later sit behind FastAPI, Streamlit, or another interface without changing its core modules.
-
-## Development
-
-Tests use LangChain's fake chat model and do not download an embedding model or call Groq:
-
-```bash
-uv run pytest
-uv run ruff check .
-uv run ruff format --check .
+```text
+uv run --group dev pytest
+uv run --group dev ruff check .
+uv run --group dev ruff format --check .
 ```
 
-For a real smoke test, ingest the included PDFs and ask one question. Keep `.env` private: the file
-is ignored, and `.env.example` documents only safe placeholders.
-
-## What this project does not claim
-
-This is a teaching-quality local RAG baseline, not a complete production service. A production
-deployment still needs authentication, request limits, observability, document-level access control,
-evaluation datasets, backups, and a strategy for updating or deleting individual documents.
+The tests use fake models and do not need a key. The app needs an internet connection for the first
+embedding model download and for Groq answers. A good answer still needs checking: retrieval may
+find the wrong passage, and a model citation can be wrong.
 
 ## License
 
