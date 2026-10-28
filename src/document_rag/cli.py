@@ -47,9 +47,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "ingest":
         document_dir = settings.documents_dir if args.documents is None else Path(args.documents)
-        chunks, page_count = load_and_split(
-            document_dir, settings.chunk_size, settings.chunk_overlap
-        )
+        try:
+            chunks, page_count = load_and_split(
+                document_dir, settings.chunk_size, settings.chunk_overlap
+            )
+        except (FileNotFoundError, ValueError) as error:
+            raise SystemExit(str(error)) from None
         store = open_vector_store(
             settings.vector_store_dir, settings.collection_name, settings.embedding_model
         )
@@ -73,7 +76,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "ask" and not os.getenv("GROQ_API_KEY"):
         raise SystemExit("GROQ_API_KEY is missing. Copy .env.example to .env and add your key.")
 
-    top_k = args.top_k or settings.top_k
+    top_k = settings.top_k if args.top_k is None else args.top_k
     if top_k < 1:
         raise SystemExit("--top-k must be at least 1")
     store = open_vector_store(
