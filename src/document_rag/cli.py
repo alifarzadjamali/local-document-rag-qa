@@ -11,7 +11,7 @@ from groq import APIError
 
 from document_rag.agentic_rag import AgenticRAGPipeline
 from document_rag.config import Settings
-from document_rag.document_loader import load_and_split
+from document_rag.document_loader import find_pdfs, load_and_split
 from document_rag.rag import RAGPipeline, create_llm
 from document_rag.vector_store import index_documents, open_vector_store
 
@@ -24,6 +24,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     ingest = subparsers.add_parser("ingest", help="Load, chunk, embed, and index PDF files.")
     ingest.add_argument("--documents", help="PDF directory (default: data/pdf).")
+
+    files = subparsers.add_parser("files", help="List PDFs waiting in the document folder.")
+    files.add_argument("--documents", help="PDF directory (default: data/pdf).")
 
     ask = subparsers.add_parser("ask", help="Ask a question about the indexed PDFs.")
     ask.add_argument("question", nargs="+", help="The question to ask.")
@@ -48,6 +51,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         chunk_count = index_documents(store, chunks)
         print(f"Indexed {chunk_count} chunks from {page_count} pages in {document_dir}.")
+        return 0
+
+    if args.command == "files":
+        document_dir = settings.documents_dir if args.documents is None else Path(args.documents)
+        try:
+            pdfs = find_pdfs(document_dir)
+        except FileNotFoundError as error:
+            raise SystemExit(str(error)) from None
+        if not pdfs:
+            print(f"No PDFs found in {document_dir}.")
+        else:
+            for pdf in pdfs:
+                print(pdf.relative_to(document_dir).as_posix())
         return 0
 
     if not os.getenv("GROQ_API_KEY"):
