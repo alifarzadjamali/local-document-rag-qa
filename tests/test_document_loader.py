@@ -34,3 +34,9 @@ def test_split_documents_preserves_metadata() -> None:
 def test_overlap_must_be_smaller_than_chunk() -> None:
     with pytest.raises(ValueError, match="chunk_overlap"):
         split_documents([], chunk_size=100, chunk_overlap=100)
+
+
+@pytest.mark.parametrize("size, overlap", [(0, 0), (100, -1)])
+def test_invalid_chunk_settings_are_rejected(size: int, overlap: int) -> None:
+    with pytest.raises(ValueError):
+        split_documents([], chunk_size=size, chunk_overlap=overlap)

@@ -28,9 +28,15 @@ def load_pdfs(directory: Path) -> list[Document]:
     pages: list[Document] = []
     for path in pdf_paths:
         for page in PyPDFLoader(str(path)).load():
+            if not page.page_content.strip():
+                continue
             page.metadata["source"] = path.relative_to(directory).as_posix()
             page.metadata["path"] = str(path)
             pages.append(page)
+    if not pages:
+        raise ValueError(
+            "The PDFs contain no selectable text. Scanned pages need OCR before indexing."
+        )
     return pages
 
 
@@ -38,8 +44,8 @@ def split_documents(
     documents: list[Document], chunk_size: int = 1_000, chunk_overlap: int = 200
 ) -> list[Document]:
     """Split pages while preserving their source and page metadata."""
-    if chunk_overlap >= chunk_size:
-        raise ValueError("chunk_overlap must be smaller than chunk_size")
+    if chunk_size < 1 or not 0 <= chunk_overlap < chunk_size:
+        raise ValueError("chunk_size must be positive and chunk_overlap must be between 0 and chunk_size")
 
     splitter = RecursiveCharacterTextSplitter(
         chunk_size=chunk_size,
