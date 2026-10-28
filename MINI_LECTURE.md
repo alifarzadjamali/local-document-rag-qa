@@ -1,259 +1,72 @@
-# Mini lecture: How this RAG project works
+# A short guide to the PDF question answering app
 
-Read this lesson before running the code. You do not need prior knowledge of RAG, LangChain, or
-vector databases.
+Suppose you have a PDF about attention and ask, "How does the model decide which words matter?"
+A chat model can give you a general answer, but it has not opened your particular PDF. This app
+finds relevant text in the PDF and puts it next to your question before the model answers. That is
+retrieval augmented generation, usually shortened to RAG.
 
-By the end, you should understand:
+The app has two jobs. You run the first when PDFs change. You run the second for each question.
 
-- why a language model alone is not enough for private documents;
-- what RAG does;
-- how a PDF becomes searchable;
-- what ChromaDB, LangChain, and Groq do in this project;
-- how the standard and agentic pipelines are different.
+## First job: make the PDFs searchable
 
-After the lesson, use the main [README](README.md) as a workshop and run the project yourself.
+`document-rag ingest` looks through the PDF folder and reads each page. It splits long pages into
+smaller pieces called chunks. A bit of text overlaps between neighbouring chunks so a useful sentence
+has a better chance of staying together. Each chunk keeps its PDF name and page number.
 
-## 1. The problem we want to solve
-
-Imagine that you have a PDF about attention in neural networks. You want to ask:
-
-> What is the attention mechanism?
-
-A language model may know something about attention from its training. However, it has three
-problems:
-
-1. It may not know what is inside your PDF.
-2. It may give a general answer instead of using your document.
-3. It may invent information. This is often called a hallucination.
-
-We want the model to read relevant parts of our PDF before answering. RAG makes that possible.
-
-## 2. What is RAG?
-
-RAG means **Retrieval-Augmented Generation**.
-
-The name describes two jobs:
-
-- **Retrieval:** find relevant text in our documents.
-- **Generation:** give that text to a language model and ask it to write an answer.
-
-Think of RAG as an open-book exam. The language model is the student. Before it answers, we find the
-best pages in the book and place them on the desk.
-
-RAG does not train a new language model. It adds relevant information to the prompt when a question
-is asked.
-
-```text
-question → find relevant PDF text → give text to the model → grounded answer
-```
-
-## 3. RAG has two phases
-
-### Phase A: prepare the documents
-
-We do this when we run:
-
-```bash
-uv run document-rag ingest
-```
-
-The program follows these steps:
+An embedding model turns each chunk into a list of numbers. Nearby lists tend to represent similar
+text. Chroma stores the chunks, their numbers, and their page details on your computer. In this repo,
+the embedding model is `sentence-transformers/all-MiniLM-L6-v2`.
 
 ```mermaid
 flowchart LR
-    A[Find PDFs] --> B[Read every page]
-    B --> C[Split text into chunks]
-    C --> D[Create embeddings]
-    D --> E[(Save in ChromaDB)]
+    A[PDF page] --> B[Text chunks]
+    B --> C[Local embedding model]
+    C --> D[(Chroma index)]
 ```
 
-First, LangChain's PDF loader reads the files one page at a time. We keep the PDF name and page
-number because we will need them for citations.
+Run `document-rag files` first if you are unsure which PDFs will be included. Ingest rebuilds the
+index, so remove a PDF and ingest again if you want it out of the results.
 
-Next, we split long pages into smaller pieces called **chunks**. Searching focused chunks works
-better than searching a whole book at once. A little text overlaps between neighboring
-chunks so an important sentence is less likely to be cut in half.
+## Second job: find text and answer
 
-Then we turn every chunk into an **embedding**. An embedding is a list of numbers that represents
-the meaning of text. Texts with similar meanings have embeddings that are close together.
+The same embedding model turns your question into numbers. Chroma compares them with the stored
+chunks and returns the closest ones. You can see those chunks yourself with `document-rag search`.
+This is a useful checkpoint: if search found the wrong page, a polished answer will not fix that.
 
-Finally, we save the text, embeddings, and source information in ChromaDB.
-
-### Phase B: answer a question
-
-We do this when we run:
-
-```bash
-uv run document-rag ask "What is the attention mechanism?"
-```
-
-The program follows these steps:
+`document-rag ask` sends the retrieved text and your question to a model hosted by Groq. The prompt
+asks it to stick to the excerpts and cite them with numbers such as `[1]`. The command also prints
+the PDF pages it retrieved. Check those pages when an answer matters. A nearby chunk can still be
+irrelevant, and a generated citation can still be wrong.
 
 ```mermaid
 flowchart LR
-    A[Question] --> B[Question embedding]
-    B --> C[ChromaDB search]
-    C --> D[Best PDF chunks]
-    D --> E[Prompt with context]
-    E --> F[Groq language model]
-    F --> G[Answer with sources]
+    A[Question] --> B[Local search]
+    C[(Chroma index)] --> B
+    B --> D[PDF excerpts]
+    A --> E[Groq model]
+    D --> E
+    E --> F[Answer and sources]
 ```
 
-The question is converted into an embedding with the same embedding model used during ingestion.
-ChromaDB compares it with the stored vectors and returns the closest chunks.
+The embeddings and Chroma index are local. When you run `ask`, the question and retrieved excerpts
+go to Groq. Only index material you are allowed to use, and think about what you send to a hosted
+service. `files`, `ingest`, and `search` do not need a Groq key.
 
-We place those chunks in a prompt. The prompt tells the language model to use only the supplied
-text, say when information is missing, and cite its sources. Groq runs the language model and sends
-the answer back to us.
+## What does "agentic" add here?
 
-## 4. What each tool does
+`ask --agentic` does one extra check. The model looks at the first search result and judges whether
+it is useful. If it says no, it rewrites the search query and tries once more. It then answers the
+original question. This can help with vague wording such as "How does it know which words matter?",
+but it makes extra model calls and the relevance judgement can be wrong. Try the plain `ask` command
+first and compare the passages with `search`.
 
-### LangChain: the common interface
+## Three things to check in an answer
 
-LangChain is a Python library for building applications that use language models and documents.
+1. Did `search` find a passage that actually addresses the question?
+2. Does the answer stick to that passage, or does it add unsupported detail?
+3. Does the cited PDF page say what the answer claims?
 
-Here, it provides common building blocks for:
-
-- loading PDF pages;
-- splitting text;
-- creating embeddings;
-- talking to ChromaDB;
-- talking to Groq;
-- representing prompts, messages, and documents.
-
-Each provider has a different API. LangChain gives them a similar shape, which keeps the code
-readable and lets us replace or test one part at a time.
-
-LangChain does not store our vectors and it is not the language model. It connects the pieces.
-
-### ChromaDB: the searchable memory
-
-ChromaDB is a vector database. A vector database stores embeddings and searches for nearby vectors.
-
-For each chunk, we store:
-
-- its embedding;
-- its original text;
-- its PDF filename;
-- its page number;
-- its position on the page.
-
-When a question arrives, ChromaDB finds chunks with a similar meaning. This is semantic search. The
-words do not have to match exactly. For example, a search about “words that matter” may find a
-paragraph about “attention weights.”
-
-ChromaDB runs locally here. Its generated files are saved in `data/vector_store/` and are not added
-to Git. Ingestion rebuilds the collection so old or deleted PDFs do not leave stale results.
-
-### The embedding model: the meaning converter
-
-We use `sentence-transformers/all-MiniLM-L6-v2` from Hugging Face. It runs on the local computer.
-Its job is only to convert text into vectors. It does not write the final answer.
-
-We must use the same embedding model for documents and questions. Otherwise, their vectors would
-not belong to the same meaning space.
-
-### Groq: fast hosted model inference
-
-Groq is the online service that runs our language model. It is the inference provider, not the
-vector database and not the RAG pipeline.
-
-We use Groq's `openai/gpt-oss-20b` model. LangChain sends the question and retrieved PDF
-chunks to Groq. Groq runs the model and returns generated text.
-
-The embedding step is local, but question answering is not fully private: the retrieved chunks are
-sent to Groq. A valid `GROQ_API_KEY` and an internet connection are required when asking questions.
-
-## 5. What the standard RAG pipeline does
-
-The standard pipeline is in `src/document_rag/rag.py`.
-
-It has a short, fixed workflow:
-
-1. Search ChromaDB with the user's question.
-2. Take the best document chunks.
-3. Add the chunks and question to a careful prompt.
-4. Ask the Groq model for an answer.
-5. Show the answer and source pages.
-
-Start here when learning the code. The steps are direct, the cost is predictable, and one question
-needs only one language-model call.
-
-## 6. What makes the other pipeline agentic?
-
-The agentic pipeline is in `src/document_rag/agentic_rag.py`.
-
-An agent can inspect a result and choose what action to take next. Our agent has only one small,
-safe decision:
-
-```mermaid
-flowchart TD
-    A[Search with original question] --> B{Is this context relevant?}
-    B -- Yes --> C[Answer the question]
-    B -- No --> D[Rewrite the search query]
-    D --> E[Search one more time]
-    E --> C
-```
-
-For example, a student may ask:
-
-> How does it know which words matter?
-
-That wording may be too vague for search. The model can rewrite it as something like:
-
-> Transformer attention weights for relevant input tokens
-
-The program searches once more with the clearer query. It still answers the student's original
-question.
-
-The loop is limited to one retry. Unlimited agents can become slow, expensive, or difficult to
-understand. Agentic RAG also uses more model calls than standard RAG, so it should solve a real
-retrieval problem. It should not be added only because it sounds advanced.
-
-## 7. What RAG improves and what it does not
-
-RAG gives the model relevant, current, or private information without retraining it. It also makes
-answers easier to inspect because we show source pages.
-
-RAG does not guarantee a correct answer. Problems are still possible:
-
-- the PDF may contain bad information;
-- the chunks may be too large or too small;
-- retrieval may select the wrong chunks;
-- the model may misunderstand good context;
-- a citation may not fully support a claim.
-
-That is why serious RAG systems need evaluation. We should test real questions, check whether the
-right chunks were retrieved, and verify whether the final answers are supported by those chunks.
-
-## 8. Follow the code in this order
-
-Read the small modules in this order:
-
-1. `document_loader.py`: find PDFs, read pages, and create chunks.
-2. `vector_store.py`: create embeddings and save chunks in ChromaDB.
-3. `rag.py`: retrieve context and generate a grounded answer.
-4. `agentic_rag.py`: judge retrieval and optionally rewrite the query.
-5. `config.py`: keep settings in one place.
-6. `cli.py`: connect everything to the `ingest` and `ask` commands.
-
-Each file has one main responsibility. Small boundaries make software easier to read, test, and
-change.
-
-## 9. Your workshop
-
-You now know the idea. Continue with the [README quick start](README.md#quick-start) to:
-
-1. install the exact dependencies;
-2. add a Groq API key;
-3. ingest the included PDFs;
-4. ask a standard RAG question;
-5. try the agentic pipeline;
-6. read the tests and change one setting at a time.
-
-As you experiment, ask yourself two separate questions:
-
-1. **Retrieval quality:** did ChromaDB find the right text?
-2. **Answer quality:** did the language model use that text correctly?
-
-Keeping those questions separate is one of the most important lessons in building good RAG systems.
+Try these checks in the [workshop](WORKSHOP.md). If retrieval is poor, experiment with the question,
+`TOP_K`, or chunk size. Re-ingest after changing chunk settings. The code follows the same flow:
+`document_loader.py` prepares text, `vector_store.py` stores it, `rag.py` asks the model, and
+`cli.py` exposes the commands.
