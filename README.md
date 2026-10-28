@@ -79,12 +79,16 @@ The project uses [uv](https://docs.astral.sh/uv/) to lock all transitive depende
 3.12, or 3.13 is supported.
 
 ```bash
-git clone https://github.com/alifarzadjamali/document-rag-pipeline.git
-cd document-rag-pipeline
+git clone https://github.com/alifarzadjamali/local-document-rag-qa.git
+cd local-document-rag-qa
 
 uv sync
 cp .env.example .env
 ```
+
+On Windows PowerShell, use `Copy-Item .env.example .env` instead of `cp`. Open `.env` in a text editor
+and replace `gsk_replace_me` with your own Groq key. You can index PDFs before getting a key; only
+`ask` needs one.
 
 Add your Groq API key to `.env`, then build the local index and ask a question:
 
