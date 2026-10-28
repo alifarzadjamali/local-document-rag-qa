@@ -13,7 +13,10 @@ def find_pdfs(directory: Path) -> list[Path]:
     """Return PDFs in a stable order so repeated runs are reproducible."""
     if not directory.exists():
         raise FileNotFoundError(f"Document directory does not exist: {directory}")
-    return sorted(path for path in directory.rglob("*.pdf") if path.is_file())
+    return sorted(
+        (path for path in directory.rglob("*") if path.is_file() and path.suffix.lower() == ".pdf"),
+        key=lambda path: str(path).lower(),
+    )
 
 
 def load_pdfs(directory: Path) -> list[Document]:
@@ -25,7 +28,7 @@ def load_pdfs(directory: Path) -> list[Document]:
     pages: list[Document] = []
     for path in pdf_paths:
         for page in PyPDFLoader(str(path)).load():
-            page.metadata["source"] = path.name
+            page.metadata["source"] = path.relative_to(directory).as_posix()
             page.metadata["path"] = str(path)
             pages.append(page)
     return pages

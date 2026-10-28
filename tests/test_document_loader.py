@@ -11,9 +11,10 @@ def test_find_pdfs_is_recursive_and_sorted(tmp_path: Path) -> None:
     nested = tmp_path / "nested"
     nested.mkdir()
     (nested / "a.pdf").touch()
+    (nested / "b.PDF").touch()
     (nested / "ignore.txt").touch()
 
-    assert find_pdfs(tmp_path) == [nested / "a.pdf", tmp_path / "z.pdf"]
+    assert find_pdfs(tmp_path) == [nested / "a.pdf", nested / "b.PDF", tmp_path / "z.pdf"]
 
 
 def test_split_documents_preserves_metadata() -> None:
