@@ -91,4 +91,4 @@ find the wrong passage, and a model citation can be wrong.
 
 ## License
 
-[MIT](LICENSE)
+The original code and documentation are under [MIT](LICENSE). The example PDFs in `data/pdf/` are third-party reading material and are not licensed by this repository. Check the source documents' own terms before redistributing them.
